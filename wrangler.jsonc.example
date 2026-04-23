@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lala-voice-agent",
+  "main": "worker/index.ts",
+  "account_id": "YOUR_ACCOUNT_ID_HERE",
+  "compatibility_date": "2026-04-16",
+  "assets": {
+    "not_found_handling": "single-page-application",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "compatibility_flags": ["nodejs_compat"],
+  "ai": {
+    "binding": "AI",
+  },
+  "d1_databases": [
+    {
+      "binding": "lala_voice_agent_db",
+      "database_name": "lala-voice-agent-db",
+      "database_id": "YOUR_DATABASE_ID_HERE",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "VoiceAgent",
+        "class_name": "VoiceAgent",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["VoiceAgent"],
+    },
+  ],
+  "routes": [
+    {
+      "pattern": "voiceagent.lalatendu.info/*",
+      "zone_name": "lalatendu.info",
+    },
+    {
+      "pattern": "voiceagent.lalatendu.info",
+      "zone_name": "lalatendu.info",
+    },
+  ],
+}
