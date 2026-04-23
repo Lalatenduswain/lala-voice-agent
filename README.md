@@ -92,6 +92,21 @@ sequenceDiagram
 3. The transcript is sent to the LLM (`@cf/google/gemma-4-26b-a4b-it`) with tools for order lookup, returns, and product search.
 4. The LLM response is converted to speech (TTS) and streamed back to the browser.
 
+## Credits
+
+This project builds upon the excellent work of:
+
+- **[Fayaz Ahmed](https://github.com/fayazara)** - Original author of [voice-agents-workshop](https://github.com/fayazara/voice-agents-workshop), which provided the foundation and architectural patterns for this voice agent implementation.
+
+- **[Cloudflare Team](https://cloudflare.com)** - For the amazing tools and services that make this possible:
+  - [@cloudflare/voice](https://www.npmjs.com/package/@cloudflare/voice) - Experimental voice SDK
+  - [Cloudflare Workers](https://developers.cloudflare.com/workers/) - Serverless compute
+  - [Durable Objects](https://developers.cloudflare.com/durable-objects/) - Stateful serverless
+  - [D1 Database](https://developers.cloudflare.com/d1/) - SQLite at the edge
+  - [Workers AI](https://developers.cloudflare.com/workers-ai/) - On-device AI inference
+
+Special thanks to the Cloudflare team for building the experimental voice infrastructure that makes real-time voice agents possible on the edge.
+
 ## License
 
 This project is provided as a workshop demo. Use it however you like.
