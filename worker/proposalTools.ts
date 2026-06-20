@@ -42,11 +42,68 @@ async function callMcp(
   }
 }
 
-export function buildProposalTools(mcpUrl: string, token: string) {
+export function buildProposalTools(
+  mcpUrl: string,
+  token: string,
+  geminiKey?: string,
+) {
   const call = (name: string, args: Record<string, unknown>) =>
     callMcp(mcpUrl, token, name, args);
 
   return {
+    lookup_pricing: tool({
+      description:
+        "Look up CURRENT real-world market pricing or other up-to-date facts from the web — e.g. cloud/AWS instance prices, software subscription costs, hardware prices, typical rates. Use this when the user asks what something currently costs before adding it to a proposal. Do NOT guess prices; use this tool.",
+      inputSchema: z.object({
+        query: z
+          .string()
+          .describe(
+            "What to look up, e.g. 'AWS EC2 t3.medium on-demand hourly price in ap-south-1'",
+          ),
+      }),
+      execute: async ({ query }) => {
+        if (!geminiKey) {
+          return { error: "Pricing lookup isn't configured right now." };
+        }
+        try {
+          const resp = await fetch(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-goog-api-key": geminiKey,
+              },
+              body: JSON.stringify({
+                contents: [
+                  {
+                    parts: [
+                      {
+                        text: `Find the current market price and answer concisely with the figure(s) and currency. Note that prices vary by region/vendor/time. Query: ${query}`,
+                      },
+                    ],
+                  },
+                ],
+                tools: [{ google_search: {} }],
+              }),
+            },
+          );
+          const data: any = await resp.json();
+          if (!resp.ok) {
+            return { error: data?.error?.message || `Pricing lookup failed (HTTP ${resp.status})` };
+          }
+          const text = (data?.candidates?.[0]?.content?.parts || [])
+            .map((p: any) => p.text)
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          return { answer: text || "No current pricing found." };
+        } catch (err: any) {
+          return { error: `Pricing lookup error: ${err?.message}` };
+        }
+      },
+    }),
+
     list_proposals: tool({
       description: "List the user's proposals, most recent first. Optionally filter by status.",
       inputSchema: z.object({

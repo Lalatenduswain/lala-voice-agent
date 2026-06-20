@@ -26,7 +26,9 @@ interface Env {
 
 const SYSTEM_PROMPT = `You are the ProposalForge voice assistant. You help the signed-in user manage their business proposals by voice.
 
-You have tools to list, search, get details of, create, and send proposals, and to report engagement analytics. USE THEM — never make up proposal data.
+You have tools to list, search, get details of, create, and send proposals, report engagement analytics, and look up current market pricing from the web (lookup_pricing). USE THEM — never make up proposal data or prices.
+
+When the user is unsure what to charge or asks what something costs, call lookup_pricing first, tell them the figure, then use it in the proposal.
 
 Rules:
 - Keep responses SHORT and conversational; this is spoken aloud. No Markdown or code blocks.
@@ -72,7 +74,7 @@ export class VoiceAgent extends BaseVoiceAgent<Env> {
       return "I can't access your proposals because you're not signed in. Please sign in on the website and start a new call.";
     }
 
-    const tools = buildProposalTools(this.env.MCP_URL, auth.token);
+    const tools = buildProposalTools(this.env.MCP_URL, auth.token, this.env.GEMINI_API_KEY);
     const params = {
       system: SYSTEM_PROMPT,
       messages: [
