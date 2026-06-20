@@ -159,6 +159,13 @@ export function buildProposalTools(
       execute: async (args) => call("create_proposal", args),
     }),
 
+    generate_pdf: tool({
+      description:
+        "Generate a downloadable PDF for a proposal and return its URL. Use when the user asks to create, export, or download a proposal PDF.",
+      inputSchema: z.object({ proposalId: z.number().int() }),
+      execute: async (args) => call("generate_pdf", args),
+    }),
+
     send_proposal: tool({
       description:
         "Email a proposal to a recipient. ALWAYS confirm the recipient and which proposal first.",
