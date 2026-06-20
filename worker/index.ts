@@ -99,18 +99,22 @@ export class VoiceAgent extends BaseVoiceAgent<Env> {
     } catch (err: any) {
       console.error("[onTurn] Workers AI failed:", err?.message || err);
       if (!this.env.GEMINI_API_KEY) throw err;
-      try {
-        const google = createGoogleGenerativeAI({ apiKey: this.env.GEMINI_API_KEY });
-        const { text } = await generateText({
-          model: google("gemini-flash-latest"),
-          ...params,
-        });
-        console.log("[onTurn] served via Gemini fallback");
-        return text || fallbackMsg;
-      } catch (err2: any) {
-        console.error("[onTurn] Gemini fallback failed:", err2?.message || err2);
-        return "Sorry, I'm having trouble reaching the AI service right now. Please try again in a moment.";
+      const google = createGoogleGenerativeAI({ apiKey: this.env.GEMINI_API_KEY });
+      // Gemini can return transient overload errors; retry a couple of times.
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const { text } = await generateText({
+            model: google("gemini-flash-latest"),
+            ...params,
+          });
+          console.log(`[onTurn] served via Gemini fallback (attempt ${attempt})`);
+          return text || fallbackMsg;
+        } catch (err2: any) {
+          console.error(`[onTurn] Gemini attempt ${attempt} failed:`, err2?.message || err2);
+          if (attempt < 3) await new Promise((r) => setTimeout(r, 600 * attempt));
+        }
       }
+      return "Sorry, I'm having trouble reaching the AI service right now. Please try again in a moment.";
     }
   }
 }
