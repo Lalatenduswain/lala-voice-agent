@@ -11,23 +11,17 @@
     "enabled": true,
   },
   "compatibility_flags": ["nodejs_compat"],
-  // Base URL of the ProposalForge app. The agent delegates token verification
-  // to <APP_URL>/api/auth/me and forwards send_proposal to its API.
+  // APP_URL: token is verified by delegating to <APP_URL>/api/auth/me.
+  // MCP_URL: proposal tools call this MCP server over HTTP (forwarding the
+  // user's token), so the agent needs NO database binding and can run in any
+  // account (e.g. a separate one for its own Workers AI quota).
   "vars": {
     "APP_URL": "https://proposal.lalatendu.info",
+    "MCP_URL": "https://proposal-mcp-server.lalatendu.workers.dev",
   },
   "ai": {
     "binding": "AI",
   },
-  // Bound to the ProposalForge production database (shared with the web app and
-  // MCP server). All tools are scoped to the authenticated user.
-  "d1_databases": [
-    {
-      "binding": "PROPOSALS_DB",
-      "database_name": "PROPOSALS_DB",
-      "database_id": "YOUR_PROPOSALS_DB_ID_HERE",
-    },
-  ],
   "durable_objects": {
     "bindings": [
       {

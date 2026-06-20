@@ -12,8 +12,10 @@ let a signed-in user **list, search, get, create, send** proposals and read
 - **Auth**: the client passes the user's JWT via `?token=` (see `src/App.tsx`).
   The agent verifies it by delegating to the app's `/api/auth/me` endpoint
   (`worker/auth.ts`) — no shared secret. Tools refuse without a valid token.
-- **Data**: bound to the app's `PROPOSALS_DB` (D1); `send_proposal` forwards to
-  the app's `/api/proposals/:id/send` API.
+- **Data**: tools call the ProposalForge **MCP server over HTTP** (`MCP_URL`),
+  forwarding the user's token — no database binding. This lets the agent run in
+  a **separate Cloudflare account** (handy for an independent Workers AI quota)
+  while the data stays in the app's account.
 - **Embed**: launched from a mic button inside the ProposalForge web app.
 
 > The original workshop demo (a fictional Acme Inc. support rep that looks up

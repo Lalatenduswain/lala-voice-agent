@@ -18,8 +18,8 @@ import { buildProposalTools } from "./proposalTools";
 interface Env {
   AI: Ai;
   VoiceAgent: DurableObjectNamespace;
-  PROPOSALS_DB: D1Database;
   APP_URL: string;
+  MCP_URL: string;
 }
 
 const SYSTEM_PROMPT = `You are the ProposalForge voice assistant. You help the signed-in user manage their business proposals by voice.
@@ -71,12 +71,7 @@ export class VoiceAgent extends BaseVoiceAgent<Env> {
     }
 
     const ai = createWorkersAI({ binding: this.env.AI });
-    const tools = buildProposalTools(
-      this.env.PROPOSALS_DB,
-      auth.user,
-      auth.token,
-      this.env.APP_URL,
-    );
+    const tools = buildProposalTools(this.env.MCP_URL, auth.token);
 
     const { text } = await generateText({
       model: ai("@cf/google/gemma-4-26b-a4b-it"),
