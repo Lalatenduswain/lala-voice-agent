@@ -12,6 +12,7 @@ import {
 } from "@cloudflare/voice";
 import { generateText, stepCountIs } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { authenticateToken, type AuthUser } from "./auth";
 import { buildProposalTools } from "./proposalTools";
 
@@ -20,6 +21,7 @@ interface Env {
   VoiceAgent: DurableObjectNamespace;
   APP_URL: string;
   MCP_URL: string;
+  GEMINI_API_KEY?: string; // optional fallback when Workers AI quota is exceeded
 }
 
 const SYSTEM_PROMPT = `You are the ProposalForge voice assistant. You help the signed-in user manage their business proposals by voice.
@@ -70,11 +72,8 @@ export class VoiceAgent extends BaseVoiceAgent<Env> {
       return "I can't access your proposals because you're not signed in. Please sign in on the website and start a new call.";
     }
 
-    const ai = createWorkersAI({ binding: this.env.AI });
     const tools = buildProposalTools(this.env.MCP_URL, auth.token);
-
-    const { text } = await generateText({
-      model: ai("@cf/google/gemma-4-26b-a4b-it"),
+    const params = {
       system: SYSTEM_PROMPT,
       messages: [
         ...context.messages.map((m) => ({
@@ -85,9 +84,34 @@ export class VoiceAgent extends BaseVoiceAgent<Env> {
       ],
       tools,
       stopWhen: stepCountIs(5),
-    });
+    };
+    const fallbackMsg = "Sorry, I couldn't process that. Could you try again?";
 
-    return text || "Sorry, I couldn't process that. Could you try again?";
+    // Primary: Workers AI. On failure (e.g. neuron quota exceeded, code 4006),
+    // fall back to Google Gemini so voice keeps working.
+    try {
+      const ai = createWorkersAI({ binding: this.env.AI });
+      const { text } = await generateText({
+        model: ai("@cf/google/gemma-4-26b-a4b-it"),
+        ...params,
+      });
+      return text || fallbackMsg;
+    } catch (err: any) {
+      console.error("[onTurn] Workers AI failed:", err?.message || err);
+      if (!this.env.GEMINI_API_KEY) throw err;
+      try {
+        const google = createGoogleGenerativeAI({ apiKey: this.env.GEMINI_API_KEY });
+        const { text } = await generateText({
+          model: google("gemini-flash-latest"),
+          ...params,
+        });
+        console.log("[onTurn] served via Gemini fallback");
+        return text || fallbackMsg;
+      } catch (err2: any) {
+        console.error("[onTurn] Gemini fallback failed:", err2?.message || err2);
+        return "Sorry, I'm having trouble reaching the AI service right now. Please try again in a moment.";
+      }
+    }
   }
 }
 

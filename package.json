@@ -12,6 +12,7 @@
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
+		"@ai-sdk/google": "^3.0.83",
 		"@cloudflare/voice": "^0.1.2",
 		"agents": "^0.11.0",
 		"ai": "^6.0.162",

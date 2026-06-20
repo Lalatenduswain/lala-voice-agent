@@ -19,6 +19,8 @@
     "APP_URL": "https://proposal.lalatendu.info",
     "MCP_URL": "https://proposal-mcp-server.lalatendu.workers.dev",
   },
+  // Optional: set GEMINI_API_KEY as a secret (`wrangler secret put GEMINI_API_KEY`)
+  // to fall back to Google Gemini when Workers AI quota is exceeded (err 4006).
   "ai": {
     "binding": "AI",
   },
