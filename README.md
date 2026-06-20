@@ -2,7 +2,23 @@
 
 A voice-powered customer support agent built on [Cloudflare Workers](https://developers.cloudflare.com/workers/) using the experimental [`@cloudflare/voice`](https://www.npmjs.com/package/@cloudflare/voice) SDK. Users speak to the agent in the browser and it responds with natural speech, backed by Workers AI for STT, LLM, and TTS.
 
-The agent acts as a support rep for a fictional e-commerce store (Acme Inc.) and can look up orders, start returns, and check product availability using tool calling.
+## ProposalForge integration
+
+This agent is wired to **[ProposalForge](https://proposal.lalatendu.info)** — it acts
+as a voice assistant for managing proposals. Its tools (`worker/proposalTools.ts`)
+let a signed-in user **list, search, get, create, send** proposals and read
+**analytics**, all scoped to that user.
+
+- **Auth**: the client passes the user's JWT via `?token=` (see `src/App.tsx`).
+  The agent verifies it by delegating to the app's `/api/auth/me` endpoint
+  (`worker/auth.ts`) — no shared secret. Tools refuse without a valid token.
+- **Data**: bound to the app's `PROPOSALS_DB` (D1); `send_proposal` forwards to
+  the app's `/api/proposals/:id/send` API.
+- **Embed**: launched from a mic button inside the ProposalForge web app.
+
+> The original workshop demo (a fictional Acme Inc. support rep that looks up
+> orders, starts returns, and checks product availability) is preserved in git
+> history.
 
 ## Stack
 

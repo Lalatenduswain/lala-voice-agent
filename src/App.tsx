@@ -26,6 +26,21 @@ function PhoneHangupIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 function App() {
+  // Auth token is passed via ?token=<jwt> (the proposal app supplies it when
+  // embedding). Derive a per-user instance name so users don't share a DO.
+  const token = new URLSearchParams(window.location.search).get("token") || "";
+  let instanceName = "default";
+  try {
+    if (token) {
+      const payload = JSON.parse(
+        atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")),
+      );
+      if (payload.userId) instanceName = `u-${payload.userId}`;
+    }
+  } catch {
+    /* ignore malformed token */
+  }
+
   const {
     status,
     transcript,
@@ -35,7 +50,7 @@ function App() {
     startCall,
     endCall,
     toggleMute,
-  } = useVoiceAgent({ agent: "VoiceAgent" });
+  } = useVoiceAgent({ agent: "VoiceAgent", name: instanceName, query: { token } });
 
   const isActive = status !== "idle";
 
