@@ -7,7 +7,6 @@ import {
 import {
   withVoice,
   WorkersAIFluxSTT,
-  WorkersAITTS,
   type VoiceTurnContext,
 } from "@cloudflare/voice";
 import { generateText, stepCountIs } from "ai";
@@ -15,6 +14,7 @@ import { createWorkersAI } from "workers-ai-provider";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { authenticateToken, type AuthUser } from "./auth";
 import { buildProposalTools } from "./proposalTools";
+import { DeepgramSTT, DispatchTTS } from "./deepgram";
 
 interface Env {
   AI: Ai;
@@ -22,6 +22,32 @@ interface Env {
   APP_URL: string;
   MCP_URL: string;
   GEMINI_API_KEY?: string; // optional fallback when Workers AI quota is exceeded
+  DEEPGRAM_API_KEY?: string; // when set, STT/TTS use Deepgram (own quota) instead of Workers AI
+}
+
+// Runtime provider toggles fetched from the main app's admin panel.
+type VoiceFlags = { gemini: boolean; deepgram: boolean; workersai_dave: boolean };
+const DEFAULT_FLAGS: VoiceFlags = { gemini: true, deepgram: true, workersai_dave: true };
+
+/** Fetch the voice-relevant provider flags from the main app (defaults to all-on). */
+async function fetchVoiceFlags(appUrl: string, token: string): Promise<VoiceFlags> {
+  try {
+    const resp = await fetch(`${appUrl}/api/voice-config`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) return { ...DEFAULT_FLAGS };
+    const body: any = await resp.json();
+    const d = body?.data;
+    if (!body?.success || !d) return { ...DEFAULT_FLAGS };
+    return {
+      gemini: typeof d.gemini === "boolean" ? d.gemini : true,
+      deepgram: typeof d.deepgram === "boolean" ? d.deepgram : true,
+      workersai_dave: typeof d.workersai_dave === "boolean" ? d.workersai_dave : true,
+    };
+  } catch (err) {
+    console.error("[fetchVoiceFlags] error", err);
+    return { ...DEFAULT_FLAGS };
+  }
 }
 
 const SYSTEM_PROMPT = `You are the ProposalForge voice assistant. You help the signed-in user manage their business proposals by voice.
@@ -40,11 +66,29 @@ Rules:
 const BaseVoiceAgent = withVoice(Agent);
 
 export class VoiceAgent extends BaseVoiceAgent<Env> {
-  transcriber = new WorkersAIFluxSTT(this.env.AI);
-  tts = new WorkersAITTS(this.env.AI);
+  // Live provider toggles (refreshed per call in onConnect from the admin panel).
+  private providerFlags: VoiceFlags = { ...DEFAULT_FLAGS };
+
+  // TTS dispatches Deepgram vs Workers AI per spoken reply based on the toggle,
+  // so it switches at runtime without a redeploy. STT switches via
+  // createTranscriber() below. `tts` is required as a class field by the SDK.
+  tts = new DispatchTTS({
+    ai: this.env.AI,
+    deepgramKey: this.env.DEEPGRAM_API_KEY,
+    useDeepgram: () => this.providerFlags.deepgram && !!this.env.DEEPGRAM_API_KEY,
+  });
 
   // Per-connection auth, populated on connect from the ?token= query param.
   private authByConn = new Map<string, { user: AuthUser; token: string }>();
+
+  /** SDK hook: pick the STT provider per connection (after onConnect loads flags). */
+  createTranscriber(_connection: Connection) {
+    const useDeepgram = this.providerFlags.deepgram && !!this.env.DEEPGRAM_API_KEY;
+    console.log(`[STT] provider = ${useDeepgram ? "Deepgram" : "Cloudflare Workers AI (Dave)"}`);
+    return useDeepgram
+      ? new DeepgramSTT(this.env.DEEPGRAM_API_KEY as string)
+      : new WorkersAIFluxSTT(this.env.AI);
+  }
 
   async onConnect(connection: Connection, ctx: ConnectionContext) {
     try {
@@ -52,6 +96,11 @@ export class VoiceAgent extends BaseVoiceAgent<Env> {
       const user = await authenticateToken(token, this.env.APP_URL);
       if (user && token) {
         this.authByConn.set(connection.id, { user, token });
+        // Load current provider toggles for this call.
+        this.providerFlags = await fetchVoiceFlags(this.env.APP_URL, token);
+        console.log(
+          `[FLAGS] gemini=${this.providerFlags.gemini} deepgram=${this.providerFlags.deepgram} workersai_dave=${this.providerFlags.workersai_dave}`,
+        );
       }
     } catch (err) {
       console.error("[onConnect] auth error", err);
@@ -69,6 +118,8 @@ export class VoiceAgent extends BaseVoiceAgent<Env> {
   }
 
   async onTurn(transcript: string, context: VoiceTurnContext) {
+    console.log(`[STT] 🎤 transcript: "${transcript}"`);
+
     const auth = this.authByConn.get(context.connection.id);
     if (!auth) {
       return "I can't access your proposals because you're not signed in. Please sign in on the website and start a new call.";
@@ -89,35 +140,47 @@ export class VoiceAgent extends BaseVoiceAgent<Env> {
     };
     const fallbackMsg = "Sorry, I couldn't process that. Could you try again?";
 
-    // Primary: Workers AI. On failure (e.g. neuron quota exceeded, code 4006),
-    // fall back to Google Gemini so voice keeps working.
-    try {
-      const ai = createWorkersAI({ binding: this.env.AI });
-      const { text } = await generateText({
-        model: ai("@cf/google/gemma-4-26b-a4b-it"),
-        ...params,
-      });
-      return text || fallbackMsg;
-    } catch (err: any) {
-      console.error("[onTurn] Workers AI failed:", err?.message || err);
-      if (!this.env.GEMINI_API_KEY) throw err;
-      const google = createGoogleGenerativeAI({ apiKey: this.env.GEMINI_API_KEY });
-      // Gemini can return transient overload errors; retry a couple of times.
+    // LLM provider order is gated by the runtime admin toggles.
+    const useGemini = this.providerFlags.gemini && !!this.env.GEMINI_API_KEY;
+    const useWorkersAI = this.providerFlags.workersai_dave;
+
+    // Primary: Google Gemini (when enabled). Retry transient overloads.
+    if (useGemini) {
+      const google = createGoogleGenerativeAI({ apiKey: this.env.GEMINI_API_KEY as string });
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           const { text } = await generateText({
             model: google("gemini-flash-latest"),
             ...params,
           });
-          console.log(`[onTurn] served via Gemini fallback (attempt ${attempt})`);
+          console.log(`[LLM] 🧠 served via Gemini (gemini-flash-latest, attempt ${attempt})`);
           return text || fallbackMsg;
-        } catch (err2: any) {
-          console.error(`[onTurn] Gemini attempt ${attempt} failed:`, err2?.message || err2);
+        } catch (err: any) {
+          console.error(`[onTurn] Gemini attempt ${attempt} failed:`, err?.message || err);
           if (attempt < 3) await new Promise((r) => setTimeout(r, 600 * attempt));
         }
       }
-      return "Sorry, I'm having trouble reaching the AI service right now. Please try again in a moment.";
     }
+
+    // Fallback: Workers AI on Dave (when enabled).
+    if (useWorkersAI) {
+      try {
+        const ai = createWorkersAI({ binding: this.env.AI });
+        const { text } = await generateText({
+          model: ai("@cf/google/gemma-4-26b-a4b-it"),
+          ...params,
+        });
+        console.log("[LLM] 🧠 served via Cloudflare Workers AI — Dave (gemma-4-26b)");
+        return text || fallbackMsg;
+      } catch (err: any) {
+        console.error("[onTurn] Workers AI fallback failed:", err?.message || err);
+      }
+    }
+
+    if (!useGemini && !useWorkersAI) {
+      console.error("[onTurn] no LLM enabled (gemini + workersai_dave both off)");
+    }
+    return "Sorry, I'm having trouble reaching the AI service right now. Please try again in a moment.";
   }
 }
 
